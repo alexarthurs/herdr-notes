@@ -1,8 +1,8 @@
 # herdr-aa-notes
 
-**A scratch note that lives beside your agents.** One markdown note in a
-dockable [herdr] pane — rendered preview, plain-text editing, and it never
-forgets: everything autosaves and survives computer restarts.
+**A scratch note that lives beside your agents.** One markdown note per
+workspace in a dockable [herdr] pane — rendered preview, plain-text editing,
+and it never forgets: everything autosaves and survives computer restarts.
 
 <img src="docs/media/hero.png" alt="The Notes pane docked beside a running test suite: rendered markdown with headings, checkboxes, code and quotes" width="900">
 
@@ -16,8 +16,9 @@ editor window, no stray `notes.txt`, no saving.
 - **Rendered markdown** — headings, checkboxes, lists, quotes, code blocks
   and inline styles, drawn natively in the terminal with a scrollbar.
 - **Zero-friction editing** — `e` to type, `Esc` to go back. That's it.
-- **Actually persistent** — atomic autosaves to a JSON file in herdr's
-  config directory. Close the pane, kill the terminal, reboot: it comes back.
+- **Actually persistent** — atomic autosaves to a per-workspace JSON file in
+  herdr's config directory. Close the pane, kill the terminal, reboot: it
+  comes back.
 - **A polite pane** — one toggle action opens, focuses, or closes it;
   a heartbeat token means a dead pane gets replaced, never duplicated.
 
@@ -75,12 +76,22 @@ Edit:
 
 ## Persistence
 
-State lives in `%APPDATA%\herdr\aa-notes.json` (Windows) or
-`$XDG_CONFIG_HOME/herdr/aa-notes.json` / `~/.config/herdr/aa-notes.json`
-(unix): `{ "text": "...", "mode": "preview"|"edit" }`. Saves are atomic
-(temp file + fsync + rename) and happen on leaving edit mode, clear, quit,
-and debounced while typing. A missing or corrupt file falls back to an
-empty note — it never wedges the pane.
+Each herdr workspace gets its own note. State lives in
+`%APPDATA%\herdr\aa-notes\<workspace-id>.json` (Windows) or
+`$XDG_CONFIG_HOME/herdr/aa-notes/<workspace-id>.json` /
+`~/.config/herdr/aa-notes/<workspace-id>.json` (unix), keyed by the stable
+`HERDR_WORKSPACE_ID` herdr injects into every pane — ids survive workspace
+renames, so the note follows the workspace, not its label. Closing a
+workspace just orphans its file; delete `<workspace-id>.json` by hand if
+you want it gone. Outside herdr (no workspace id) the pane falls back to
+the single legacy `herdr/aa-notes.json`, and the first workspace to open
+notes moves that legacy file into its own slot — an existing note is
+inherited, never lost.
+
+The format is `{ "text": "...", "mode": "preview"|"edit" }`. Saves are
+atomic (temp file + fsync + rename) and happen on leaving edit mode, clear,
+quit, and debounced while typing. A missing or corrupt file falls back to
+an empty note — it never wedges the pane.
 
 ## Hacking
 

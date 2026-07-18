@@ -1,6 +1,6 @@
 //! Notes TUI: preview/edit modes over one scrollable markdown note, autosaved
-//! to `aa-notes.json`, heartbeating a pane identity token so the launcher can
-//! toggle / focus / replace the pane.
+//! to this workspace's note file (see state.rs), heartbeating a pane identity
+//! token so the launcher can toggle / focus / replace the pane.
 //!
 //! There is no manual save workflow — everything autosaves — and the only
 //! destructive action (`x`, clear the note) sits behind a y/N confirm.

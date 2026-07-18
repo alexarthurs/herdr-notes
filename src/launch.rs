@@ -4,8 +4,14 @@
 //!
 //! - `--launch-decision`: `herdr pane list` JSON → `OPEN` | `FOCUS <id>` |
 //!   `CLOSE <id>` | `REPLACE <id>`, preferring the focused tab's Notes pane
-//!   but matching ANY tab — the note is one global document, so a second live
-//!   instance would clobber it on save.
+//!   but matching ANY pane that edits the focused pane's NOTE FILE
+//!   ([`crate::state::note_key`]) — a duplicate on one file would clobber it
+//!   on save, while a Notes pane keyed to a different file is a different
+//!   document. The launchers pass the GLOBAL (unscoped) pane list: scoping it
+//!   by the launcher shell's `HERDR_WORKSPACE_ID` would drop the (globally
+//!   unique) focused pane whenever that env id diverges from the focused
+//!   pane's actual workspace, degrading to `OPEN` and spawning a duplicate.
+//!   All workspace scoping happens HERE, off each pane's `workspace_id` field.
 //! - `--focused-pane`: `herdr pane list` JSON → `<pane_id>\t<cwd>` of the
 //!   focused pane (cwd stripped of the Windows `\\?\` verbatim prefix).
 //! - `--open-plan`: `herdr pane layout` JSON → `<rightmost_pane_id>\t<ratio>`,
@@ -14,7 +20,7 @@
 
 use serde::Deserialize;
 
-use crate::state::{METADATA_SOURCE, PANE_LABEL};
+use crate::state::{note_key, METADATA_SOURCE, PANE_LABEL};
 
 /// Preferred notes width in columns; the ratio is derived from the target pane.
 const TARGET_COLS: f64 = 42.0;
@@ -42,6 +48,7 @@ struct Pane {
     #[serde(default)]
     focused: bool,
     tab_id: Option<String>,
+    workspace_id: Option<String>,
     #[serde(default)]
     tokens: serde_json::Map<String, serde_json::Value>,
 }
@@ -115,14 +122,22 @@ pub fn launch_decision(pane_list_json: &str, now: u64) -> String {
     let Some(focused) = panes.iter().find(|p| p.focused) else {
         return "OPEN".to_string();
     };
-    // Prefer a Notes pane in the focused tab, but fall back to one in ANY
-    // tab: the note is a single global document loaded once at startup, so a
-    // second live instance would silently overwrite the other's edits
-    // (last-writer-wins) on every save.
+    // Prefer a Notes pane in the focused tab, but fall back to one editing
+    // the SAME NOTE FILE in any tab: the note is one document per file,
+    // loaded once at startup, so a second live instance on one file would
+    // silently overwrite the other's edits (last-writer-wins) on every save —
+    // while a Notes pane on a different file is deliberately ignored. The
+    // comparison uses state.rs's note_key — the exact identity that picks the
+    // file on disk — never raw workspace ids: ids that both coarsen to the
+    // shared legacy file (missing or filename-unsafe), or that differ only by
+    // ASCII case on case-insensitive NTFS, are one document here too.
+    let focused_key = note_key(focused.workspace_id.as_deref());
+    let same_note = |p: &&Pane| note_key(p.workspace_id.as_deref()) == focused_key;
     let notes = panes
         .iter()
+        .filter(same_note)
         .find(|p| p.is_notes() && p.tab_id.as_deref() == focused.tab_id.as_deref())
-        .or_else(|| panes.iter().find(|p| p.is_notes()));
+        .or_else(|| panes.iter().filter(same_note).find(|p| p.is_notes()));
     let Some(pane) = notes else {
         return "OPEN".to_string();
     };
@@ -214,7 +229,7 @@ mod tests {
     #[test]
     fn decision_open_focus_close() {
         // Other-tab Notes pane is still focused, never duplicated: two live
-        // instances of the single global note would clobber each other.
+        // instances of one workspace's note would clobber each other.
         let other_tab = pane_list(&format!(
             r#"{FOCUSED},{{"pane_id":"w1:p9","label":"Notes","tab_id":"w1:t2"}}"#
         ));
@@ -238,6 +253,61 @@ mod tests {
             r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-aa-notes":"95"}}}}"#
         ));
         assert_eq!(launch_decision(&token_only, 100), "FOCUS w1:p2");
+    }
+
+    #[test]
+    fn decision_ignores_notes_panes_in_other_workspaces() {
+        let focused =
+            r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","workspace_id":"w1"}"#;
+        // In an unscoped pane list, a Notes pane in ANOTHER workspace edits a
+        // different note file — not a duplicate, not focusable from here: OPEN.
+        let other_ws = pane_list(&format!(
+            r#"{focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1","workspace_id":"w2"}}"#
+        ));
+        assert_eq!(launch_decision(&other_ws, 100), "OPEN");
+        // Same workspace, other tab: still matched (the real duplicate risk).
+        let same_ws = pane_list(&format!(
+            r#"{focused},{{"pane_id":"w1:p9","label":"Notes","tab_id":"w1:t2","workspace_id":"w1"}}"#
+        ));
+        assert_eq!(launch_decision(&same_ws, 100), "FOCUS w1:p9");
+    }
+
+    #[test]
+    fn decision_matches_on_note_file_identity_not_raw_workspace_id() {
+        // Filename-unsafe ids ("w-1", "w:2") and a MISSING id all load and
+        // save the same shared legacy aa-notes.json (state.rs note_key =
+        // None): a Notes pane under any of them is a true duplicate of the
+        // focused pane's note and must be matched, never OPEN'd over.
+        let focused =
+            r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","workspace_id":"w-1"}"#;
+        let legacy_mate = pane_list(&format!(
+            r#"{focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1","workspace_id":"w:2"}}"#
+        ));
+        assert_eq!(launch_decision(&legacy_mate, 100), "FOCUS w2:p9");
+        let missing_id = pane_list(&format!(
+            r#"{focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1"}}"#
+        ));
+        assert_eq!(launch_decision(&missing_id, 100), "FOCUS w2:p9");
+        // A safe id has its own file — NOT a duplicate of a legacy-keyed pane.
+        let safe_focused =
+            r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","workspace_id":"w1"}"#;
+        let mixed = pane_list(&format!(
+            r#"{safe_focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1","workspace_id":"w-2"}}"#
+        ));
+        assert_eq!(launch_decision(&mixed, 100), "OPEN");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn decision_folds_workspace_id_case_on_windows() {
+        // NTFS filenames are case-insensitive: ids "W6" and "w6" share one
+        // w6.json, so their Notes panes are duplicates of each other.
+        let focused =
+            r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","workspace_id":"W6"}"#;
+        let other_case = pane_list(&format!(
+            r#"{focused},{{"pane_id":"w1:p9","label":"Notes","tab_id":"w1:t2","workspace_id":"w6"}}"#
+        ));
+        assert_eq!(launch_decision(&other_case, 100), "FOCUS w1:p9");
     }
 
     #[test]

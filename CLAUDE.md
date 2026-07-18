@@ -1,8 +1,8 @@
 # herdr-aa-notes
 
-A single herdr plugin: a persistent markdown notes pane (single scrollable note,
-preview/edit modes). Standalone Rust crate — the repo root IS the plugin root
-(`herdr plugin link .` from here).
+A single herdr plugin: a persistent markdown notes pane (one scrollable note
+per workspace, preview/edit modes). Standalone Rust crate — the repo root IS
+the plugin root (`herdr plugin link .` from here).
 
 **Living doc**: when you discover a non-obvious herdr/Windows/TUI behavior the hard
 way, record it in the Gotchas section below before finishing the task. The fuller
@@ -17,12 +17,26 @@ findings doc (and the reference implementation, `herdr-aa-sidebar`) lives in
   autosave, 5s heartbeat, scrollbars
 - `src/markdown.rs` — hand-rolled renderer (headings, lists, checkboxes, quotes,
   code, bold/italic, hr) + display-width wrapping
-- `src/state.rs` — `{text, mode}` JSON at `%APPDATA%\herdr\aa-notes.json`
-  (unix: `$XDG_CONFIG_HOME|~/.config/herdr/`); forgiving parse, atomic save
-  (temp + `sync_all` + rename)
+- `src/state.rs` — `{text, mode}` JSON, one file PER WORKSPACE at
+  `%APPDATA%\herdr\aa-notes\<workspace-id>.json` (unix:
+  `$XDG_CONFIG_HOME|~/.config/herdr/aa-notes/`), keyed by the stable
+  `HERDR_WORKSPACE_ID` herdr injects into every pane (survives workspace
+  renames; a closed workspace leaves a harmless orphan file). Unset or
+  filename-unsafe (non-alphanumeric) id → legacy single-note
+  `herdr/aa-notes.json`; first per-workspace load MOVES a lingering legacy
+  file into the workspace's slot (read-in-place if the rename fails; the
+  per-workspace file wins when both exist). `note_key` exposes the note-FILE
+  identity of a workspace id (None = shared legacy file; Windows folds ASCII
+  case because NTFS filenames are case-insensitive) — the launcher guard
+  compares THESE keys so it can never drift from the on-disk layout.
+  Forgiving parse, atomic save (temp + `sync_all` + rename); path logic
+  takes an injected base dir so tests never touch the real APPDATA
 - `src/launch.rs` — OPEN/FOCUS/CLOSE/REPLACE toggle decisions (20s stale heartbeat
-  → REPLACE); prefers a same-tab Notes pane but matches any tab so a second
-  instance is never spawned (two live instances = last-writer-wins data loss)
+  → REPLACE); prefers a same-tab Notes pane but matches any pane whose
+  `note_key` EQUALS the focused pane's, so a second instance on the same note
+  file is never spawned (two live instances = last-writer-wins data loss) even
+  when different raw workspace ids coarsen to one file (unsafe/missing ids →
+  legacy, NTFS case folding); Notes panes on other note files are ignored
 - `src/ipc.rs` — socket client: named pipe `\\.\pipe\<HERDR_SOCKET_PATH>` on
   Windows, unix socket elsewhere; one NDJSON request per connection
 - `scripts/open-notes.ps1` / `open-notes.sh` — toggle launchers (right-dock);
@@ -50,7 +64,8 @@ while the TUI is running in a pane — quit/close the pane first (and
   keep the old binary).
 - End-to-end verification: drive the real binary in a throwaway pane —
   `herdr pane split` + `pane run` + `pane send-keys` + `pane read --source visible`,
-  then check `%APPDATA%\herdr\aa-notes.json`. Cheap, catches what unit tests can't.
+  then check `%APPDATA%\herdr\aa-notes\<workspace-id>.json` (the pane's
+  `HERDR_WORKSPACE_ID`). Cheap, catches what unit tests can't.
 
 ## Gotchas (verified against herdr 0.7.1)
 
@@ -80,6 +95,29 @@ Learned building this plugin:
 - A `pane list` snapshot goes stale the moment you close a pane: the REPLACE path
   must re-run `pane list` after closing the corpse before deriving split targets,
   or the split targets a dead pane id and the action exits 1.
+- Plain `herdr pane list` is GLOBAL — panes from EVERY workspace, exactly one
+  `focused` pane in the whole list. The launchers deliberately pass this
+  GLOBAL list: scoping with `--workspace $HERDR_WORKSPACE_ID` uses the
+  launcher shell's SPAWN-TIME env id, which can diverge from the focused
+  pane's actual workspace (pane moved between workspaces, action invoked
+  under another workspace's env) — the scoped list then omits the focused
+  pane, `--launch-decision` degrades to OPEN, and a duplicate Notes pane
+  spawns beside the focused workspace's live one. All scoping happens in the
+  binary off each pane's `workspace_id` FIELD, compared by note-file identity
+  (`state::note_key`) so the guard matches exactly the panes that share a file.
+- `herdr plugin action invoke` runs the action in the GLOBALLY focused
+  workspace context, not the invoking pane's. Keybinding use is fine (the
+  focused workspace IS the intended one), but a background/scripted invoke
+  races with the user switching workspaces: it toggles Notes in — and can
+  legacy-migrate a note into — whatever workspace happens to be focused.
+  Scripted invocations MUST focus the target workspace first and verify it
+  stayed focused.
+- A pane created with `pane run "<shell command>"` keeps its shell alive after
+  the command exits — quitting the TUI with `q` left a dead PowerShell prompt
+  still labeled "Notes". The ps1 launcher appends `; exit` to the pane run
+  command (unix `exec`s) so the pane closes itself when the TUI quits; the
+  CLOSE paths therefore treat `pane close` as best-effort cleanup (`*> $null`
+  / `|| true`, exit 0) because the pane is usually already gone.
 - `herdr pane close` kills the process with no signal — a dirty debounce buffer is
   lost. Launcher CLOSE/REPLACE paths first send `pane send-keys <id> Escape q`
   (graceful save-and-quit from any mode), sleep ~400ms, then close as cleanup.

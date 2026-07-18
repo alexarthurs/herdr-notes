@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # open-notes.sh — unix launcher for the herdr-aa-notes pane.
 #
-# Idempotent "launch-or-focus, toggle on repeat":
-#   - no Notes pane anywhere                -> open one in the current tab,
-#     DOCKED ON THE RIGHT edge (any-tab scope: the note is one global document,
-#     a second live instance would clobber it on save)
+# Idempotent "launch-or-focus, toggle on repeat", scoped to the FOCUSED
+# pane's workspace (each workspace has its own note file; the binary matches
+# panes by note-FILE identity, see state.rs note_key):
+#   - no Notes pane on that note file       -> open one in the current tab,
+#     DOCKED ON THE RIGHT edge (any-tab scope within the workspace: a second
+#     live instance on the same note file would clobber it on save)
 #   - a Notes pane exists but isn't focused -> focus it
 #   - the focused pane IS the Notes pane    -> close it (toggle off)
 #   - Notes pane with a stale heartbeat     -> close the corpse, open fresh
@@ -33,6 +35,16 @@ if [ ! -x "$bin" ]; then
     --focus
 fi
 
+# ALWAYS the GLOBAL pane list — never scoped with `--workspace
+# $HERDR_WORKSPACE_ID`. Focus is global (exactly one focused pane across ALL
+# workspaces) and this shell's spawn-time env id can diverge from the focused
+# pane's actual workspace (pane moved between workspaces, action invoked under
+# another workspace's env): a scoped list would then omit the focused pane
+# entirely, the decision would degrade to OPEN, and a duplicate Notes pane
+# would spawn beside the focused workspace's live one — two instances
+# clobbering one note file. The binary does the scoping instead:
+# --launch-decision keys off the FOCUSED pane's own workspace_id field,
+# matching panes by note-FILE identity (state.rs note_key).
 panes="$("$herdr_bin" pane list 2>/dev/null || true)"
 
 open_pane() {
@@ -84,7 +96,11 @@ case "$decision" in
     # keystrokes still inside the 2s autosave debounce window.
     "$herdr_bin" pane send-keys "$pid" Escape q >/dev/null 2>&1 || true
     sleep 0.4
-    exec "$herdr_bin" pane close "$pid"
+    # `pane run` exec'd the TUI, so the pane normally closes itself when the
+    # TUI quits; this close is cleanup for a wedged TUI and often finds the
+    # pane already gone — that is success, not an error.
+    "$herdr_bin" pane close "$pid" >/dev/null 2>&1 || true
+    exit 0
     ;;
   "REPLACE "*)
     # Dead pane (stale heartbeat): close the corpse, then dock a fresh one.

@@ -1,9 +1,11 @@
 # open-notes.ps1 -- Windows launcher for the herdr-aa-notes pane.
 #
-# Idempotent "launch-or-focus, toggle on repeat":
-#   - no Notes pane anywhere                -> open one in the current tab,
-#     DOCKED ON THE RIGHT edge (any-tab scope: the note is one global document,
-#     a second live instance would clobber it on save)
+# Idempotent "launch-or-focus, toggle on repeat", scoped to the FOCUSED
+# pane's workspace (each workspace has its own note file; the binary matches
+# panes by note-FILE identity, see state.rs note_key):
+#   - no Notes pane on that note file       -> open one in the current tab,
+#     DOCKED ON THE RIGHT edge (any-tab scope within the workspace: a second
+#     live instance on the same note file would clobber it on save)
 #   - a Notes pane exists but isn't focused -> focus it
 #   - the focused pane IS the Notes pane    -> close it (toggle off)
 #   - Notes pane with a stale heartbeat     -> close the corpse, open fresh
@@ -44,6 +46,16 @@ function Get-PaneId([string]$json) {
     return ([regex]'"pane_id":"([^"]+)"').Match($json).Groups[1].Value
 }
 
+# ALWAYS the GLOBAL pane list — never scoped with `--workspace
+# $env:HERDR_WORKSPACE_ID`. Focus is global (exactly one focused pane across
+# ALL workspaces) and this shell's spawn-time env id can diverge from the
+# focused pane's actual workspace (pane moved between workspaces, action
+# invoked under another workspace's env): a scoped list would then omit the
+# focused pane entirely, the decision would degrade to OPEN, and a duplicate
+# Notes pane would spawn beside the focused workspace's live one — two
+# instances clobbering one note file. The binary does the scoping instead:
+# --launch-decision keys off the FOCUSED pane's own workspace_id field,
+# matching panes by note-FILE identity (state.rs note_key).
 $PanesJson = (& $HerdrBin pane list | Out-String)
 
 function Open-Pane {
@@ -54,7 +66,7 @@ function Open-Pane {
         $out = (& $HerdrBin pane split --current --direction right --ratio 0.7 | Out-String)
         $np = Get-PaneId $out
         if ($np) {
-            & $HerdrBin pane run $np "& \`"$Bin\`""
+            & $HerdrBin pane run $np "& \`"$Bin\`"; exit"
             & $HerdrBin pane rename $np 'Notes' *> $null
         }
         exit 0
@@ -76,8 +88,10 @@ function Open-Pane {
     # The split already put the new pane on the right edge — no swap needed.
     # Absolute path via the PowerShell CALL OPERATOR; the `\"` escaping
     # survives PS 5.1's native-arg quote-stripping so spaces in the install
-    # path reach herdr intact.
-    & $HerdrBin pane run $np "& \`"$Bin\`""
+    # path reach herdr intact. The trailing `; exit` closes the pane's shell
+    # (and so the pane) the moment the TUI quits — `q` must never strand a
+    # dead PowerShell prompt still labeled "Notes".
+    & $HerdrBin pane run $np "& \`"$Bin\`"; exit"
     & $HerdrBin pane rename $np 'Notes' *> $null
     # herdr has no focus-by-id; a zoom on/off cycle focuses deterministically.
     & $HerdrBin pane zoom $np --on *> $null
@@ -101,8 +115,11 @@ if ($Decision -like 'FOCUS *') {
     # keystrokes still inside the 2s autosave debounce window.
     & $HerdrBin pane send-keys $PaneId Escape q *> $null
     Start-Sleep -Milliseconds 400
-    & $HerdrBin pane close $PaneId
-    exit $LASTEXITCODE
+    # The quitting TUI's `; exit` normally closes the pane by itself; this
+    # close is cleanup for a wedged TUI and often finds the pane already
+    # gone — that is success, not an error.
+    & $HerdrBin pane close $PaneId *> $null
+    exit 0
 } elseif ($Decision -like 'REPLACE *') {
     # Dead pane (stale heartbeat): close the corpse, then dock a fresh one.
     # The Esc+q is a best-effort save in case the pane is alive after all
