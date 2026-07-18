@@ -11,7 +11,7 @@ autosaves and survives computer restarts.
 <img alt="Rust" src="https://img.shields.io/badge/Rust-self--contained_crate-orange?logo=rust&logoColor=white">
 <img alt="herdr" src="https://img.shields.io/badge/herdr-%E2%89%A5%200.7-5865a3">
 <img alt="Platforms" src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-supported-2ea44f">
-<img alt="CI" src="https://github.com/alexarthurs/herdr-aa-notes/actions/workflows/ci.yml/badge.svg">
+<img alt="CI" src="https://github.com/alexarthurs/herdr-notes/actions/workflows/ci.yml/badge.svg">
 <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
 
 <br><br>
@@ -27,7 +27,7 @@ This gives them a permanent home one keypress away: no editor window, no stray
 `notes.txt`, no saving.
 
 ```
-herdr plugin install alexarthurs/herdr-aa-notes
+herdr plugin install alexarthurs/herdr-notes
 ```
 
 ---
@@ -62,8 +62,8 @@ One toggle action, scoped to the current tab — it opens the pane docked on
 the right edge, focuses it if it's already open, and closes it if it's focused:
 
 ```
-herdr plugin action invoke herdr-aa-notes.open-notes-windows   # windows
-herdr plugin action invoke herdr-aa-notes.open-notes           # linux / macos
+herdr plugin action invoke herdr-notes.open-notes-windows   # windows
+herdr plugin action invoke herdr-notes.open-notes           # linux / macos
 ```
 
 First run greets you with the keymap:
@@ -99,17 +99,17 @@ Edit:
 
 ## Persistence
 
-Each herdr workspace gets its own note. State lives in
-`%APPDATA%\herdr\aa-notes\<workspace-id>.json` (Windows) or
-`$XDG_CONFIG_HOME/herdr/aa-notes/<workspace-id>.json` /
-`~/.config/herdr/aa-notes/<workspace-id>.json` (unix), keyed by the stable
-`HERDR_WORKSPACE_ID` herdr injects into every pane — ids survive workspace
-renames, so the note follows the workspace, not its label. Closing a
-workspace just orphans its file; delete `<workspace-id>.json` by hand if
-you want it gone. Outside herdr (no workspace id) the pane falls back to
-the single legacy `herdr/aa-notes.json`, and the first workspace to open
-notes moves that legacy file into its own slot — an existing note is
-inherited, never lost.
+Each herdr workspace gets its own note, stored as
+`<workspace-id>.json` in herdr's per-plugin state directory
+(`HERDR_PLUGIN_STATE_DIR` — e.g. `%LOCALAPPDATA%\herdr\plugins\herdr-notes\`
+on Windows), keyed by the stable `HERDR_WORKSPACE_ID` herdr injects into
+every pane — ids survive workspace renames, so the note follows the
+workspace, not its label. Closing a workspace just orphans its file; delete
+`<workspace-id>.json` by hand if you want it gone. Run outside herdr, the
+pane falls back to `herdr/notes/` under the platform config dir (single
+shared `notes.json` when there's no workspace id), and any note found in
+the fallback layout is moved into the state dir on first load — an
+existing note is inherited, never lost.
 
 The format is `{ "text": "...", "mode": "preview"|"edit" }`. Saves are
 atomic (temp file + fsync + rename) and happen on leaving edit mode, clear,

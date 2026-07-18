@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# open-notes.sh — unix launcher for the herdr-aa-notes pane.
+# open-notes.sh — unix launcher for the herdr-notes pane.
 #
 # Idempotent "launch-or-focus, toggle on repeat", scoped to the FOCUSED
 # pane's workspace (each workspace has its own note file; the binary matches
@@ -22,13 +22,13 @@ set -uo pipefail
 
 herdr_bin="${HERDR_BIN_PATH:-herdr}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-bin="$script_dir/../target/release/herdr-aa-notes"
+bin="$script_dir/../target/release/herdr-notes"
 
 # Without the binary there is no decision logic; fall back to herdr's
 # declarative pane open (right split — degraded but functional).
 if [ ! -x "$bin" ]; then
   exec "$herdr_bin" plugin pane open \
-    --plugin herdr-aa-notes \
+    --plugin herdr-notes \
     --entrypoint notes \
     --placement split \
     --direction right \
@@ -53,7 +53,7 @@ open_pane() {
   fid="${fp%%	*}"
   fcwd="${fp#*	}"
   if [ -z "$fid" ]; then
-    exec "$herdr_bin" plugin pane open --plugin herdr-aa-notes \
+    exec "$herdr_bin" plugin pane open --plugin herdr-notes \
       --entrypoint notes --placement split --direction right --focus
   fi
 
@@ -65,8 +65,12 @@ open_pane() {
     ratio="${plan#*	}"
   fi
 
+  # Per herdr's plugin docs, durable state belongs in HERDR_PLUGIN_STATE_DIR;
+  # actions receive it but split panes do not — pass it through to the TUI.
   out="$("$herdr_bin" pane split "$target" --direction right --ratio "$ratio" \
-    ${fcwd:+--cwd "$fcwd"} --no-focus 2>/dev/null || true)"
+    ${fcwd:+--cwd "$fcwd"} \
+    ${HERDR_PLUGIN_STATE_DIR:+--env "HERDR_PLUGIN_STATE_DIR=$HERDR_PLUGIN_STATE_DIR"} \
+    --no-focus 2>/dev/null || true)"
   np="$(printf '%s' "$out" | sed -n 's/.*"pane_id":"\([^"]*\)".*/\1/p' | head -n1)"
   [ -n "$np" ] || exit 1
 

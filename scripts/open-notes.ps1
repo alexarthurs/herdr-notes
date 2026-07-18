@@ -1,4 +1,4 @@
-# open-notes.ps1 -- Windows launcher for the herdr-aa-notes pane.
+# open-notes.ps1 -- Windows launcher for the herdr-notes pane.
 #
 # Idempotent "launch-or-focus, toggle on repeat", scoped to the FOCUSED
 # pane's workspace (each workspace has its own note file; the binary matches
@@ -34,10 +34,10 @@ function Strip-Verbatim([string]$p) {
     return $p
 }
 $PluginRoot = Strip-Verbatim (Split-Path -Parent $PSScriptRoot)
-$Bin = Join-Path $PluginRoot 'target\release\herdr-aa-notes.exe'
+$Bin = Join-Path $PluginRoot 'target\release\herdr-notes.exe'
 
 if (-not (Test-Path $Bin)) {
-    Write-Error "herdr-aa-notes.exe not found at $Bin -- run 'cargo build --release' in the plugin directory first."
+    Write-Error "herdr-notes.exe not found at $Bin -- run 'cargo build --release' in the plugin directory first."
     exit 1
 }
 
@@ -81,6 +81,10 @@ function Open-Pane {
 
     $splitArgs = @('pane', 'split', $Target, '--direction', 'right', '--ratio', $Ratio, '--no-focus')
     if ($FocusedCwd) { $splitArgs += @('--cwd', $FocusedCwd) }
+    # Per herdr's plugin docs, durable state belongs in HERDR_PLUGIN_STATE_DIR.
+    # Actions receive it; panes made via `pane split` do not — pass it through
+    # so the TUI stores notes there (state.rs falls back to the config dir).
+    if ($env:HERDR_PLUGIN_STATE_DIR) { $splitArgs += @('--env', "HERDR_PLUGIN_STATE_DIR=$env:HERDR_PLUGIN_STATE_DIR") }
     $out = (& $HerdrBin @splitArgs | Out-String)
     $np = Get-PaneId $out
     if (-not $np) { exit 1 }

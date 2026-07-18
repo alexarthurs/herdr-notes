@@ -1,12 +1,12 @@
 [package]
-name = "herdr-aa-notes"
+name = "herdr-notes"
 version = "0.1.0"
 edition = "2024"
 description = "Persistent markdown notes pane for herdr"
 license = "MIT"
 
 [[bin]]
-name = "herdr-aa-notes"
+name = "herdr-notes"
 path = "src/main.rs"
 
 [dependencies]

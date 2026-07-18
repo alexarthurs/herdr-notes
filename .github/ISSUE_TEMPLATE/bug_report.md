@@ -20,5 +20,5 @@ labels: bug
 
 **Evidence**
 
-<!-- Pane screenshot, `herdr plugin log list --plugin herdr-aa-notes` output,
-     or the contents of the aa-notes JSON file if persistence-related. -->
+<!-- Pane screenshot, `herdr plugin log list --plugin herdr-notes` output,
+     or the contents of the notes JSON file if persistence-related. -->

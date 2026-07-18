@@ -1,10 +1,10 @@
 //! Persistent note state: one scrollable markdown note PER WORKSPACE plus the
 //! last-active mode, stored as a small JSON file beside herdr's own config
-//! (`%APPDATA%\herdr\aa-notes\<workspace-id>.json` on Windows,
+//! (`%APPDATA%\herdr\notes\<workspace-id>.json` on Windows,
 //! `$XDG_CONFIG_HOME/herdr/…` elsewhere) so the note survives computer
 //! restarts. The key is the stable `HERDR_WORKSPACE_ID` herdr injects into
 //! every managed pane; outside herdr (or on an id unsafe for a filename) the
-//! pane falls back to the legacy single-note `herdr/aa-notes.json`, and the
+//! pane falls back to the legacy single-note `herdr/notes.json`, and the
 //! first workspace to load notes MOVES that legacy file into its own slot.
 //!
 //! Loading is forgiving — a missing, hand-edited, or truncated file falls back
@@ -18,7 +18,7 @@ pub const PANE_LABEL: &str = "Notes";
 
 /// Source id for `pane.report_metadata`; its token marks a pane as the Notes
 /// pane and doubles as the liveness heartbeat.
-pub const METADATA_SOURCE: &str = "herdr-aa-notes";
+pub const METADATA_SOURCE: &str = "herdr-notes";
 
 /// Unix seconds now — the heartbeat clock for the pane identity token.
 pub fn unix_now() -> u64 {
@@ -51,6 +51,28 @@ pub struct Note {
     pub mode: Mode,
 }
 
+/// Where notes live. herdr's plugin docs say durable state belongs in
+/// `HERDR_PLUGIN_STATE_DIR`, which herdr injects into plugin-run commands
+/// (the unix `[[panes]]` entry gets it natively; the Windows launcher passes
+/// it through `pane split --env`). A TUI started by hand has neither, so the
+/// pre-existing config-dir layout stays as the fallback — and as the
+/// migration source when the state dir is empty.
+enum StoreBase {
+    /// `HERDR_PLUGIN_STATE_DIR`: files live directly in the dir
+    /// (`<dir>/<key>.json`, no-workspace fallback `<dir>/note.json`).
+    PluginState(PathBuf),
+    /// Config-dir layout (`<config>/herdr/notes/<key>.json`, legacy
+    /// `<config>/herdr/notes.json`).
+    Config(PathBuf),
+}
+
+fn store_base() -> Option<StoreBase> {
+    if let Some(dir) = std::env::var_os("HERDR_PLUGIN_STATE_DIR").filter(|d| !d.is_empty()) {
+        return Some(StoreBase::PluginState(PathBuf::from(dir)));
+    }
+    config_base().map(StoreBase::Config)
+}
+
 /// Platform config base (`%APPDATA%` / `$XDG_CONFIG_HOME` / `~/.config`),
 /// same convention as the sidebar plugin's `aa-sidebar.json`. All path logic
 /// below takes this as a parameter so tests can inject a temp dir.
@@ -81,12 +103,12 @@ fn is_filename_safe(id: &str) -> bool {
 /// Pre-per-workspace single-note file; also the fallback when no (safe)
 /// workspace id is available.
 fn legacy_path_in(base: &Path) -> PathBuf {
-    base.join("herdr").join("aa-notes.json")
+    base.join("herdr").join("notes.json")
 }
 
 /// The note-FILE identity of a workspace id: `Some(key)` when the id gets its
 /// own per-workspace file, `None` when it falls back to the shared legacy
-/// `aa-notes.json`. Panes whose keys are EQUAL load and save the SAME file.
+/// `notes.json`. Panes whose keys are EQUAL load and save the SAME file.
 /// This is the identity the launcher's duplicate-instance guard (launch.rs)
 /// compares — never raw workspace ids — so the guard can't drift from the
 /// on-disk layout: unsafe/missing ids all coarsen to one legacy file, and on
@@ -101,24 +123,63 @@ pub fn note_key(workspace_id: Option<&str>) -> Option<String> {
     Some(key)
 }
 
-/// Pure path selection: `<base>/herdr/aa-notes/<note-key>.json` for a
-/// filename-safe id, the legacy `<base>/herdr/aa-notes.json` otherwise.
+/// Pure path selection: `<base>/herdr/notes/<note-key>.json` for a
+/// filename-safe id, the legacy `<base>/herdr/notes.json` otherwise.
 /// Built from [`note_key`] so path identity and guard identity always agree.
 fn state_path_in(base: &Path, workspace_id: Option<&str>) -> PathBuf {
     match note_key(workspace_id) {
-        Some(key) => base.join("herdr").join("aa-notes").join(format!("{key}.json")),
+        Some(key) => base.join("herdr").join("notes").join(format!("{key}.json")),
         None => legacy_path_in(base),
+    }
+}
+
+/// Path selection for the plugin-state layout: `<dir>/<note-key>.json`, with
+/// the shared `<dir>/note.json` for missing/unsafe workspace ids.
+fn state_dir_path(dir: &Path, workspace_id: Option<&str>) -> PathBuf {
+    match note_key(workspace_id) {
+        Some(key) => dir.join(format!("{key}.json")),
+        None => dir.join("note.json"),
     }
 }
 
 /// State file location for THIS process (env-derived base + workspace id).
 pub fn state_path() -> Option<PathBuf> {
-    Some(state_path_in(&config_base()?, workspace_env().as_deref()))
+    let ws = workspace_env();
+    Some(match store_base()? {
+        StoreBase::PluginState(dir) => state_dir_path(&dir, ws.as_deref()),
+        StoreBase::Config(base) => state_path_in(&base, ws.as_deref()),
+    })
 }
 
 pub fn load() -> Note {
-    let Some(base) = config_base() else { return Note::default() };
-    load_in(&base, workspace_env().as_deref())
+    let ws = workspace_env();
+    match store_base() {
+        Some(StoreBase::PluginState(dir)) => {
+            load_state_dir(&dir, config_base().as_deref(), ws.as_deref())
+        }
+        Some(StoreBase::Config(base)) => load_in(&base, ws.as_deref()),
+        None => Note::default(),
+    }
+}
+
+/// Load from the plugin state dir, migrating from the config-dir layout the
+/// first time: if this workspace's file is missing there, MOVE the config-dir
+/// per-workspace file (or, failing that, the legacy single note) into place.
+/// A failed rename falls back to reading the source without moving it.
+fn load_state_dir(dir: &Path, config: Option<&Path>, workspace_id: Option<&str>) -> Note {
+    let path = state_dir_path(dir, workspace_id);
+    if !path.exists()
+        && let Some(base) = config
+    {
+        let sources = [state_path_in(base, workspace_id), legacy_path_in(base)];
+        if let Some(src) = sources.iter().find(|p| p.exists()) {
+            let moved = std::fs::create_dir_all(dir).is_ok() && std::fs::rename(src, &path).is_ok();
+            if !moved {
+                return read_note(src);
+            }
+        }
+    }
+    read_note(&path)
 }
 
 /// Load with one-time migration: when the per-workspace file does not exist
@@ -232,7 +293,7 @@ mod tests {
     /// Fresh per-test base dir under the OS temp dir — path logic takes the
     /// base as a parameter precisely so tests never touch the real APPDATA.
     fn temp_base(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("aa-notes-test-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("notes-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("herdr")).unwrap();
         dir
@@ -247,7 +308,7 @@ mod tests {
         let base = Path::new("base");
         assert_eq!(
             state_path_in(base, Some("w6")),
-            base.join("herdr").join("aa-notes").join("w6.json")
+            base.join("herdr").join("notes").join("w6.json")
         );
         // Unset (outside herdr) and filename-unsafe ids use the legacy path.
         let legacy = legacy_path_in(base);
@@ -298,6 +359,27 @@ mod tests {
         write_note(&legacy_path_in(&base), "stale");
         assert_eq!(load_in(&base, Some("w6")).text, "mine");
         assert!(legacy_path_in(&base).exists(), "legacy file untouched when both exist");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn plugin_state_dir_layout_migrates_from_the_config_layout() {
+        let base = temp_base("statedir");
+        let dir = base.join("plugin-state");
+        // Per-workspace file moves over from the config layout on first load.
+        let cfg_ws = state_path_in(&base, Some("w6"));
+        std::fs::create_dir_all(cfg_ws.parent().unwrap()).unwrap();
+        write_note(&cfg_ws, "from config");
+        assert_eq!(load_state_dir(&dir, Some(&base), Some("w6")).text, "from config");
+        assert!(!cfg_ws.exists(), "moved, not copied");
+        assert!(dir.join("w6.json").exists());
+        assert_eq!(load_state_dir(&dir, Some(&base), Some("w6")).text, "from config");
+        // No workspace id: shared note.json, migrating the config legacy file.
+        write_note(&legacy_path_in(&base), "legacy");
+        assert_eq!(load_state_dir(&dir, Some(&base), None).text, "legacy");
+        assert!(dir.join("note.json").exists());
+        // Nothing anywhere is still just an empty note.
+        assert_eq!(load_state_dir(&dir, Some(&base), Some("w9")), Note::default());
         let _ = std::fs::remove_dir_all(&base);
     }
 

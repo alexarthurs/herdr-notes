@@ -1,4 +1,4 @@
-//! herdr-aa-notes — a persistent markdown notes pane for herdr: one scrollable
+//! herdr-notes — a persistent markdown notes pane for herdr: one scrollable
 //! note with preview/edit modes, autosaved to a JSON file that survives
 //! restarts.
 //!
@@ -31,8 +31,8 @@ fn main() -> std::io::Result<()> {
             return Ok(());
         }
         Some(other) => {
-            eprintln!("herdr-aa-notes: unknown argument `{other}`");
-            eprintln!("usage: herdr-aa-notes [--launch-decision|--focused-pane|--open-plan]");
+            eprintln!("herdr-notes: unknown argument `{other}`");
+            eprintln!("usage: herdr-notes [--launch-decision|--focused-pane|--open-plan]");
             std::process::exit(2);
         }
         None => {}

@@ -1,4 +1,4 @@
-# herdr-aa-notes
+# herdr-notes
 
 A single herdr plugin: a persistent markdown notes pane (one scrollable note
 per workspace, preview/edit modes). Standalone Rust crate — the repo root IS
@@ -17,13 +17,19 @@ findings doc (and the reference implementation, `herdr-aa-sidebar`) lives in
   autosave, 5s heartbeat, scrollbars
 - `src/markdown.rs` — hand-rolled renderer (headings, lists, checkboxes, quotes,
   code, bold/italic, hr) + display-width wrapping
-- `src/state.rs` — `{text, mode}` JSON, one file PER WORKSPACE at
-  `%APPDATA%\herdr\aa-notes\<workspace-id>.json` (unix:
-  `$XDG_CONFIG_HOME|~/.config/herdr/aa-notes/`), keyed by the stable
+- `src/state.rs` — `{text, mode}` JSON, one file PER WORKSPACE in herdr's
+  plugin state dir (`HERDR_PLUGIN_STATE_DIR/<workspace-id>.json`, e.g.
+  `%LOCALAPPDATA%\herdr\plugins\herdr-notes\` — the docs-mandated home for
+  durable plugin state; actions get the env var and the launchers pass it
+  into the pane via `pane split --env`, the unix `[[panes]]` entry gets it
+  natively). Without it (binary run by hand): config-dir fallback
+  `%APPDATA%\herdr\notes\<workspace-id>.json` (unix:
+  `$XDG_CONFIG_HOME|~/.config/herdr/notes/`); the state dir migrates
+  fallback-layout files in on first load. Keyed by the stable
   `HERDR_WORKSPACE_ID` herdr injects into every pane (survives workspace
   renames; a closed workspace leaves a harmless orphan file). Unset or
   filename-unsafe (non-alphanumeric) id → legacy single-note
-  `herdr/aa-notes.json`; first per-workspace load MOVES a lingering legacy
+  `herdr/notes.json`; first per-workspace load MOVES a lingering legacy
   file into the workspace's slot (read-in-place if the rename fails; the
   per-workspace file wins when both exist). `note_key` exposes the note-FILE
   identity of a workspace id (None = shared legacy file; Windows folds ASCII
@@ -52,19 +58,19 @@ cargo clippy --all-targets -- -D warnings
 
 All three must pass before shipping. `cargo build --release` fails with os error 5
 while the TUI is running in a pane — quit/close the pane first (and
-`Get-Process herdr-aa-notes | Stop-Process` for stragglers).
+`Get-Process herdr-notes | Stop-Process` for stragglers).
 
 ## Plugin dev workflow
 
 - `herdr plugin link .` registers this checkout; `herdr plugin list --json` shows it.
-- Open/toggle: `herdr plugin action invoke herdr-aa-notes.open-notes-windows`
-  (unix: `herdr-aa-notes.open-notes`).
-- `herdr plugin log list --plugin herdr-aa-notes` shows action/spawn logs.
+- Open/toggle: `herdr plugin action invoke herdr-notes.open-notes-windows`
+  (unix: `herdr-notes.open-notes`).
+- `herdr plugin log list --plugin herdr-notes` shows action/spawn logs.
 - After a rebuild, close any open Notes pane and re-invoke the action (stale panes
   keep the old binary).
 - End-to-end verification: drive the real binary in a throwaway pane —
   `herdr pane split` + `pane run` + `pane send-keys` + `pane read --source visible`,
-  then check `%APPDATA%\herdr\aa-notes\<workspace-id>.json` (the pane's
+  then check `%APPDATA%\herdr\notes\<workspace-id>.json` (the pane's
   `HERDR_WORKSPACE_ID`). Cheap, catches what unit tests can't.
 
 ## Gotchas (verified against herdr 0.7.1)
@@ -83,7 +89,7 @@ Inherited from the sidebar plugin's findings:
 - `pane split --ratio` is the ORIGINAL pane's share (the new pane gets 1 − ratio);
   ratios clamp to a 0.1 floor.
 - Metadata token values must be STRINGS (numbers rejected silently); the heartbeat
-  token (`herdr-aa-notes` = unix-time string) re-stamps every ~5s so launchers can
+  token (`herdr-notes` = unix-time string) re-stamps every ~5s so launchers can
   tell a live pane from a corpse (>20s stale → REPLACE).
 - Esc must NEVER exit the TUI (only `q` quits); modifier+Enter is indistinguishable
   from plain Enter in herdr panes; avoid emoji with VS16 variation selectors.
@@ -178,9 +184,9 @@ The three shots in `docs/media/` (hero / edit / welcome) must show:
   (capture_titled.ps1, resize_titled.ps1, attach_shoot.ps1, herdr_rpc.py —
   JSON params via stdin, PS 5.1 mangles quoted JSON argv) live beside it.
   The demo note markdown is `tools/demo-note.md` in THIS repo — seed it
-  into the shoot workspace's `aa-notes\<ws>.json` before capturing (read
+  into the shoot workspace's `notes\<ws>.json` before capturing (read
   with `-Encoding UTF8`!). The shoot session shares the real config dir:
-  its note files live under `aa-notes\` — back up/clean up.
+  its note files live under `notes\` — back up/clean up.
 
 Hard constraints learned live:
 
@@ -192,7 +198,7 @@ Hard constraints learned live:
   compact banner is acceptable.)
 - Procedure/tools: monorepo `tools/screenshots/` — `resize_wt.ps1 1760 996`
   (note the printed "was" size and restore it), stage a `--focus` tab in
-  THIS workspace, seed the demo note into `aa-notes\<ws>.json` (backup and
+  THIS workspace, seed the demo note into `notes\<ws>.json` (backup and
   restore the user's file; read the seed markdown with
   `Get-Content -Raw -Encoding UTF8` or em-dashes mojibake), close any
   existing same-workspace Notes pane first (the launcher would FOCUS it

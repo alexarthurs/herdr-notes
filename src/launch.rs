@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(launch_decision(&focused_notes, 100), "CLOSE w1:p2");
         // Token without label also identifies the pane.
         let token_only = pane_list(&format!(
-            r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-aa-notes":"95"}}}}"#
+            r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-notes":"95"}}}}"#
         ));
         assert_eq!(launch_decision(&token_only, 100), "FOCUS w1:p2");
     }
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn decision_matches_on_note_file_identity_not_raw_workspace_id() {
         // Filename-unsafe ids ("w-1", "w:2") and a MISSING id all load and
-        // save the same shared legacy aa-notes.json (state.rs note_key =
+        // save the same shared legacy notes.json (state.rs note_key =
         // None): a Notes pane under any of them is a true duplicate of the
         // focused pane's note and must be matched, never OPEN'd over.
         let focused =
@@ -313,11 +313,11 @@ mod tests {
     #[test]
     fn decision_replaces_dead_panes() {
         let stale = pane_list(&format!(
-            r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-aa-notes":"40"}}}}"#
+            r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-notes":"40"}}}}"#
         ));
         assert_eq!(launch_decision(&stale, 100), "REPLACE w1:p2");
         let garbled = pane_list(&format!(
-            r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-aa-notes":{{"v":1}}}}}}"#
+            r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-notes":{{"v":1}}}}}}"#
         ));
         assert_eq!(launch_decision(&garbled, 100), "REPLACE w1:p2");
         // Label-only (no token yet) = launcher-fresh, NOT dead.
