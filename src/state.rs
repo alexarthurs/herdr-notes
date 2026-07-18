@@ -74,8 +74,9 @@ fn store_base() -> Option<StoreBase> {
 }
 
 /// Platform config base (`%APPDATA%` / `$XDG_CONFIG_HOME` / `~/.config`),
-/// same convention as the sidebar plugin's `aa-sidebar.json`. All path logic
-/// below takes this as a parameter so tests can inject a temp dir.
+/// the convention herdr plugins used before `HERDR_PLUGIN_STATE_DIR` existed.
+/// All path logic below takes this as a parameter so tests can inject a temp
+/// dir.
 fn config_base() -> Option<PathBuf> {
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from);

@@ -1,6 +1,6 @@
 # Manifest for herdr-notes — a persistent markdown notes pane.
 #
-# Cross-platform notes (same findings as herdr-aa-sidebar; see CLAUDE.md):
+# Cross-platform notes (same findings as herdr-sidebar; see CLAUDE.md):
 #  - Action ids must be GLOBALLY unique across platforms, so the Windows
 #    launcher uses a `-windows`-suffixed id; both gate with `platforms`.
 #  - herdr can NOT spawn a relative [[panes]] command on Windows (it resolves

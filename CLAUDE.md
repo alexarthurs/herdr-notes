@@ -6,7 +6,7 @@ the plugin root (`herdr plugin link .` from here).
 
 **Living doc**: when you discover a non-obvious herdr/Windows/TUI behavior the hard
 way, record it in the Gotchas section below before finishing the task. The fuller
-findings doc (and the reference implementation, `herdr-aa-sidebar`) lives in
+findings doc (and the reference implementation, `herdr-sidebar`) lives in
 `C:/Users/Alex/Projects/herdr/CLAUDE.md` — read it before deep herdr integration work.
 
 ## Layout
@@ -155,7 +155,7 @@ The three shots in `docs/media/` (hero / edit / welcome) must show:
   so keep g→capture in ONE command) showing the demo note with headings,
   checkboxes, a code fence, a quote, and the scrollbar visible.
 
-- **Shared dummy backdrop** (agreed with the herdr-aa-sidebar Coordinator
+- **Shared dummy backdrop** (agreed with the herdr-sidebar Coordinator
   agent — both repos' screenshots use the SAME roster; keep them in sync):
   herdr's left chrome must show the fictional acme universe, never Alex's
   real projects. Spaces: `acme-app` [main, 1↑ — the real demo repo built by
