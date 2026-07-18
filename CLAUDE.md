@@ -171,11 +171,16 @@ The three shots in `docs/media/` (hero / edit / welcome) must show:
   Display window: a separate WT window running a script that CLEARS the
   inherited HERDR_* env (herdr refuses "nested" otherwise) then
   `herdr session attach shoot`; find/resize/capture that window BY TITLE
-  (WT is single-process, MainWindowHandle is ambiguous). Helper scripts
+  (WT is single-process, MainWindowHandle is ambiguous). **One-shot restage:
+  `tools/screenshots/stage-shoot-session.ps1 -WithGrid` in the monorepo**
+  rebuilds the whole backdrop idempotently (server, demo repos, workspaces,
+  fake agent rows, grid, display window); helper scripts
   (capture_titled.ps1, resize_titled.ps1, attach_shoot.ps1, herdr_rpc.py —
-  JSON params via stdin, PS 5.1 mangles quoted JSON argv) live in the
-  monorepo's tools/screenshots/. The shoot session shares the real
-  config dir: its w2 note file is `aa-notes\w2.json` — back up/clean up.
+  JSON params via stdin, PS 5.1 mangles quoted JSON argv) live beside it.
+  The demo note markdown is `tools/demo-note.md` in THIS repo — seed it
+  into the shoot workspace's `aa-notes\<ws>.json` before capturing (read
+  with `-Encoding UTF8`!). The shoot session shares the real config dir:
+  its note files live under `aa-notes\` — back up/clean up.
 
 Hard constraints learned live:
 
