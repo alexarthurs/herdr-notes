@@ -149,14 +149,40 @@ The three shots in `docs/media/` (hero / edit / welcome) must show:
   so keep g→capture in ONE command) showing the demo note with headings,
   checkboxes, a code fence, a quote, and the scrollbar visible.
 
+- **Shared dummy backdrop** (agreed with the herdr-aa-sidebar Coordinator
+  agent — both repos' screenshots use the SAME roster; keep them in sync):
+  herdr's left chrome must show the fictional acme universe, never Alex's
+  real projects. Spaces: `acme-app` [main, 1↑ — the real demo repo built by
+  the monorepo's `tools/screenshots/setup_demo.sh`], `acme-api` [main],
+  `acme-web` [dev], `billing-service` [main] (backdrop cwds are throwaway
+  git-init'd temp dirs so branch sublabels render). Agents panel: the four
+  visible acme-app grid panes labeled `auth-refactor` (claude),
+  `checkout-tests` (codex), `api-docs` (codex), `rate-limiter` (claude),
+  plus FAKE background rows `flaky-tests` (codex, working, acme-api),
+  `reviewer` (claude, idle, acme-web), `migrations` (codex, working,
+  billing-service). Fake rows are reported via the socket API
+  `pane.report_agent {pane_id, source, agent, state}` on plain shell panes
+  (no CLI spawned, persists over detection); in-universe composer texts:
+  "Draft OpenAPI docs for the billing endpoints" (api-docs), "Add a
+  sliding-window rate limiter to the gateway" (rate-limiter).
+- **Staging happens in an isolated named session**, never Alex's real one:
+  `herdr --session shoot server` (headless), then point HERDR_SOCKET_PATH
+  at `%APPDATA%\herdr\sessions\shoot\herdr.sock` for every CLI/RPC call.
+  Display window: a separate WT window running a script that CLEARS the
+  inherited HERDR_* env (herdr refuses "nested" otherwise) then
+  `herdr session attach shoot`; find/resize/capture that window BY TITLE
+  (WT is single-process, MainWindowHandle is ambiguous). Helper scripts
+  (capture_titled.ps1, resize_titled.ps1, attach_shoot.ps1, herdr_rpc.py —
+  JSON params via stdin, PS 5.1 mangles quoted JSON argv) live in the
+  monorepo's tools/screenshots/. The shoot session shares the real
+  config dir: its w2 note file is `aa-notes\w2.json` — back up/clean up.
+
 Hard constraints learned live:
 
 - **The user's email must never appear**: Claude Code's welcome banner
   includes it when the pane is ≳60 columns wide. Keep agent grid columns
-  ≲60 cols (split the grid while the auto-docked Sidebar still holds ~32
-  cols, then close the Sidebar pane LAST — its ensure hook re-docks on
-  tab/workspace focus events, and pane splits/send-keys don't fire those).
-  Verify every image before shipping; `blur_region.py` is the fallback.
+  ≲60 cols. Verify every image before shipping; `blur_region.py` is the
+  fallback. (First name "Alex" in the compact banner is acceptable.)
 - Procedure/tools: monorepo `tools/screenshots/` — `resize_wt.ps1 1760 996`
   (note the printed "was" size and restore it), stage a `--focus` tab in
   THIS workspace, seed the demo note into `aa-notes\<ws>.json` (backup and
