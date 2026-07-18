@@ -1,0 +1,48 @@
+# Manifest for herdr-aa-notes — a persistent markdown notes pane.
+#
+# Cross-platform notes (same findings as herdr-aa-sidebar; see CLAUDE.md):
+#  - Action ids must be GLOBALLY unique across platforms, so the Windows
+#    launcher uses a `-windows`-suffixed id; both gate with `platforms`.
+#  - herdr can NOT spawn a relative [[panes]] command on Windows (it resolves
+#    the program against herdr's own directory -> ERROR_PATH_NOT_FOUND), so
+#    the [[panes]] entry below serves linux/macos only; Windows launches run
+#    the exe BY ABSOLUTE PATH via `pane split` + `pane run`.
+#  - Launchers dock Notes on the RIGHT edge: split the tab's rightmost pane
+#    right; `--ratio` is the ORIGINAL pane's share, so ~0.7 leaves Notes ~0.3.
+
+id = "herdr-aa-notes"
+name = "herdr-aa-notes"
+version = "0.1.0"
+description = "Persistent markdown notes pane: one scrollable note with preview/edit, autosaved across restarts."
+min_herdr_version = "0.7.0"
+platforms = ["linux", "macos", "windows"]
+
+[[build]]
+command = ["cargo", "build", "--release"]
+
+# Declarative pane entry — usable on linux/macos (`plugin pane open`) and as
+# the unix launcher's fallback. Unspawnable on Windows (relative command).
+[[panes]]
+id = "notes"
+title = "Notes"
+placement = "split"
+command = ["./target/release/herdr-aa-notes"]
+
+# Toggle the notes pane: open right-docked / focus if unfocused / close if
+# focused / replace if the heartbeat is stale.
+[[actions]]
+id = "open-notes"
+platforms = ["linux", "macos"]
+title = "Toggle notes"
+description = "Open the notes pane docked on the right (focus it if open; close it if focused)."
+command = ["bash", "scripts/open-notes.sh"]
+
+[[actions]]
+id = "open-notes-windows"
+platforms = ["windows"]
+title = "Toggle notes"
+description = "Open the notes pane docked on the right (focus it if open; close it if focused)."
+command = [
+  "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+  '''$u=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$u; $OutputEncoding=$u; $b=$env:HERDR_BIN_PATH; if(-not $b){$b='herdr'}; $p=((& $b plugin list --json|ConvertFrom-Json).result.plugins|?{$_.plugin_id -eq 'herdr-aa-notes'}).plugin_root; if($p -and $p.StartsWith('\\?\')){$p=$p.Substring(4)}; & (Join-Path (Join-Path $p 'scripts') 'open-notes.ps1')''',
+]
