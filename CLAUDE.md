@@ -128,3 +128,41 @@ Learned building this plugin:
   text insertion or AltGr layouts can't type `@ { [ ] } \`.
 - Wrap and horizontal cursor math must budget by display columns (unicode-width),
   not char count — CJK/emoji are double-width and get clipped otherwise.
+
+## README screenshots (Alex's criteria — follow on every reshoot)
+
+The three shots in `docs/media/` (hero / edit / welcome) must show:
+
+- **A 2×2 grid of agents beside the Notes pane: exactly 2 Claude Code + 2
+  OpenAI Codex** (mixed diagonally looks best). NO Sidebar/explorer panel in
+  any shot — the notes pane and the agents are the subject.
+- **The CLI harness graphics must be visible** — Claude Code's logo art +
+  version banner, Codex's boxed model/directory banner — with **some text in
+  the agents**: type a realistic prompt into a couple of composers via
+  `pane send-text` (NOT `pane run` — text must sit unsubmitted so no agent
+  actually runs and no tokens burn).
+- Exactly ONE title per pane: the border label says "Notes"; the in-app
+  header shows only `[preview]`/`[edit]` + scroll position (user-reported
+  duplicate — do not reintroduce).
+- The note pinned to the TOP (`send-keys <pane> g` immediately before the
+  capture — a mouse wheel over the focused pane can scroll it between steps,
+  so keep g→capture in ONE command) showing the demo note with headings,
+  checkboxes, a code fence, a quote, and the scrollbar visible.
+
+Hard constraints learned live:
+
+- **The user's email must never appear**: Claude Code's welcome banner
+  includes it when the pane is ≳60 columns wide. Keep agent grid columns
+  ≲60 cols (split the grid while the auto-docked Sidebar still holds ~32
+  cols, then close the Sidebar pane LAST — its ensure hook re-docks on
+  tab/workspace focus events, and pane splits/send-keys don't fire those).
+  Verify every image before shipping; `blur_region.py` is the fallback.
+- Procedure/tools: monorepo `tools/screenshots/` — `resize_wt.ps1 1760 996`
+  (note the printed "was" size and restore it), stage a `--focus` tab in
+  THIS workspace, seed the demo note into `aa-notes\<ws>.json` (backup and
+  restore the user's file; read the seed markdown with
+  `Get-Content -Raw -Encoding UTF8` or em-dashes mojibake), close any
+  existing same-workspace Notes pane first (the launcher would FOCUS it
+  instead of opening in the staging tab), `capture.ps1` → `crop.ps1 8 48
+  1744 940` → frame via `frame_pil.frame` into `docs/media/`. Keep framed
+  titles/filenames stable (hero/edit/welcome).
