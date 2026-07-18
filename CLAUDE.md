@@ -180,9 +180,11 @@ The three shots in `docs/media/` (hero / edit / welcome) must show:
 Hard constraints learned live:
 
 - **The user's email must never appear**: Claude Code's welcome banner
-  includes it when the pane is ≳60 columns wide. Keep agent grid columns
-  ≲60 cols. Verify every image before shipping; `blur_region.py` is the
-  fallback. (First name "Alex" in the compact banner is acceptable.)
+  includes it in its wide two-column variant. Verified live (both repos'
+  shoots): compact/no-email at ≤63 cols, email variant at 74+ cols — keep
+  agent grid columns ≤63, target ~60 for margin. Verify every image before
+  shipping; `blur_region.py` is the fallback. (First name "Alex" in the
+  compact banner is acceptable.)
 - Procedure/tools: monorepo `tools/screenshots/` — `resize_wt.ps1 1760 996`
   (note the printed "was" size and restore it), stage a `--focus` tab in
   THIS workspace, seed the demo note into `aa-notes\<ws>.json` (backup and
