@@ -120,10 +120,9 @@ fn checkbox(t: &str) -> Option<(bool, &str)> {
     let rest = t.strip_prefix("- ").or_else(|| t.strip_prefix("* "))?;
     let (done, rest) = if let Some(r) = rest.strip_prefix("[ ]") {
         (false, r)
-    } else if let Some(r) = rest.strip_prefix("[x]").or_else(|| rest.strip_prefix("[X]")) {
-        (true, r)
     } else {
-        return None;
+        let r = rest.strip_prefix("[x]").or_else(|| rest.strip_prefix("[X]"))?;
+        (true, r)
     };
     Some((done, rest.strip_prefix(' ').unwrap_or(rest)))
 }
