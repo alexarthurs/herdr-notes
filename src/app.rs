@@ -322,10 +322,12 @@ impl App {
             }
         };
 
-        let mut title = vec![
-            Span::styled(" Notes ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled(format!("[{mode}]"), Style::default().fg(Color::Cyan)),
-        ];
+        // The pane border already says "Notes" (metadata title) — repeating it
+        // here read as a duplicate, so the header carries only mode + scroll.
+        let mut title = vec![Span::styled(
+            format!(" [{mode}]"),
+            Style::default().fg(Color::Cyan),
+        )];
         if let Some(hint) = scroll_hint {
             title.push(Span::styled(
                 format!("  {hint}"),
