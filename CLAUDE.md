@@ -37,8 +37,9 @@ findings doc (and the reference implementation, `herdr-sidebar`) lives in
   compares THESE keys so it can never drift from the on-disk layout.
   Forgiving parse, atomic save (temp + `sync_all` + rename); path logic
   takes an injected base dir so tests never touch the real APPDATA
-- `src/launch.rs` — OPEN/FOCUS/CLOSE/REPLACE toggle decisions (20s stale heartbeat
-  → REPLACE); prefers a same-tab Notes pane but matches any pane whose
+- `src/launch.rs` — OPEN/FOCUS/CLOSE/REPLACE toggle decisions (20s stale
+  heartbeat OR label-without-token restart corpse → REPLACE); prefers a
+  same-tab Notes pane but matches any pane whose
   `note_key` EQUALS the focused pane's, so a second instance on the same note
   file is never spawned (two live instances = last-writer-wins data loss) even
   when different raw workspace ids coarsen to one file (unsafe/missing ids →
@@ -134,6 +135,18 @@ Learned building this plugin:
   text insertion or AltGr layouts can't type `@ { [ ] } \`.
 - Wrap and horizontal cursor math must budget by display columns (unicode-width),
   not char count — CJK/emoji are double-width and get clipped otherwise.
+- A herdr server restart (`[experimental] pane_history`) restores panes'
+  LABELS and scrollback but NOT their processes or metadata tokens, and
+  restore/attach emit NO events (sidebar finding, their v0.5.1) — so a
+  restored Notes pane is a "Notes"-labeled corpse the old FOCUS logic zoomed
+  forever. Corpse rule: `--launch-decision` treats label-without-token as
+  REPLACE. That's only safe because the launcher stamps the heartbeat token
+  synchronously (`herdr-notes --stamp <pane-id>`) right after `pane split`,
+  BEFORE `pane run` — a fresh pane is never observable label-only (the
+  sidebar's hold-the-lock-until-the-token-lands lesson; skipping it gave
+  them an infinite replace loop). The TUI re-stamps at startup and every ~5s.
+  Notes needs none of the sidebar's revive hooks (pane.focused etc.) —
+  it's toggle-only, so the next prefix+m heals the corpse.
 
 ## README screenshots (Alex's criteria — follow on every reshoot)
 

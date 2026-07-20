@@ -74,6 +74,12 @@ open_pane() {
   np="$(printf '%s' "$out" | sed -n 's/.*"pane_id":"\([^"]*\)".*/\1/p' | head -n1)"
   [ -n "$np" ] || exit 1
 
+  # Stamp the identity token BEFORE the TUI spawns (best effort — the TUI
+  # re-stamps at startup): --launch-decision treats label-without-token as
+  # a restart corpse to REPLACE, so a fresh pane must never be observable
+  # in that state, or a second toggle during startup would replace it.
+  "$bin" --stamp "$np" >/dev/null 2>&1 || true
+
   # The split already put the new pane on the right edge — no swap needed.
   "$herdr_bin" pane run "$np" "exec \"$bin\""
   "$herdr_bin" pane rename "$np" "Notes" >/dev/null 2>&1 || true

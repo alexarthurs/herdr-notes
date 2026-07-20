@@ -66,6 +66,10 @@ function Open-Pane {
         $out = (& $HerdrBin pane split --current --direction right --ratio 0.7 | Out-String)
         $np = Get-PaneId $out
         if ($np) {
+            # Stamp the identity token BEFORE the TUI spawns: the corpse rule
+            # in --launch-decision treats label-without-token as a dead pane
+            # to replace, so a fresh pane must never be observable that way.
+            & $Bin --stamp $np *> $null
             & $HerdrBin pane run $np "& \`"$Bin\`"; exit"
             & $HerdrBin pane rename $np 'Notes' *> $null
         }
@@ -88,6 +92,12 @@ function Open-Pane {
     $out = (& $HerdrBin @splitArgs | Out-String)
     $np = Get-PaneId $out
     if (-not $np) { exit 1 }
+
+    # Stamp the identity token BEFORE the TUI spawns (best effort — the TUI
+    # re-stamps at startup): --launch-decision treats label-without-token as
+    # a restart corpse to REPLACE, so a fresh pane must never be observable
+    # in that state, or a second toggle during startup would replace it.
+    & $Bin --stamp $np *> $null
 
     # The split already put the new pane on the right edge — no swap needed.
     # Absolute path via the PowerShell CALL OPERATOR; the `\"` escaping

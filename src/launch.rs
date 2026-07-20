@@ -54,9 +54,11 @@ struct Pane {
 }
 
 impl Pane {
-    /// A Notes pane is recognized by its heartbeat token (reported by the TUI)
-    /// or by the "Notes" label (present from the moment the launcher renames
-    /// the fresh pane, before the TUI has reported its token).
+    /// A Notes pane is recognized by its heartbeat token (stamped by the
+    /// launcher at spawn, then re-stamped by the TUI) or by the "Notes" label.
+    /// Label WITHOUT token is how a restart corpse presents (see
+    /// [`token_stale`]) — it still matters here so the corpse is matched and
+    /// replaced instead of being duplicated over.
     fn is_notes(&self) -> bool {
         self.tokens.contains_key(METADATA_SOURCE) || self.label.as_deref() == Some(PANE_LABEL)
     }
@@ -97,11 +99,20 @@ fn strip_bom(input: &str) -> &str {
     input.trim_start_matches('\u{feff}')
 }
 
-/// True when `key` is present but its heartbeat timestamp is missing,
-/// unparsable, or older than [`HEARTBEAT_STALE_SECS`]. Absent key = false
-/// (a fresh pane the launcher labeled but whose TUI hasn't reported yet).
+/// True when the heartbeat timestamp under `key` is ABSENT, unparsable, or
+/// older than [`HEARTBEAT_STALE_SECS`].
+///
+/// Absent = corpse, not fresh: a herdr server restart (`pane_history`)
+/// restores a pane's label and scrollback but neither its process nor its
+/// metadata tokens, and restore/attach emit NO events — so a "Notes"-labeled
+/// pane with no token is a dead shell that FOCUS would zoom forever. Treating
+/// it as stale is safe because a launcher-created pane is never observable in
+/// that state: the launcher stamps the token synchronously (`--stamp`, see
+/// main.rs) right after `pane split`, BEFORE the TUI process even spawns —
+/// the sidebar plugin's hold-the-lock-until-the-token-lands lesson, without
+/// which a slow-starting fresh pane would be replaced in a loop.
 fn token_stale(tokens: &serde_json::Map<String, serde_json::Value>, key: &str, now: u64) -> bool {
-    let Some(value) = tokens.get(key) else { return false };
+    let Some(value) = tokens.get(key) else { return true };
     let ts = value
         .as_u64()
         .or_else(|| value.as_str().and_then(|s| s.parse().ok()));
@@ -226,29 +237,34 @@ mod tests {
     const FOCUSED: &str =
         r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","cwd":"C:\\work\\my repo"}"#;
 
+    /// A live Notes pane: label + fresh heartbeat token (tests run at now=100).
+    const LIVE: &str = r#""label":"Notes","tokens":{"herdr-notes":"95"}"#;
+
     #[test]
     fn decision_open_focus_close() {
         // Other-tab Notes pane is still focused, never duplicated: two live
         // instances of one workspace's note would clobber each other.
         let other_tab = pane_list(&format!(
-            r#"{FOCUSED},{{"pane_id":"w1:p9","label":"Notes","tab_id":"w1:t2"}}"#
+            r#"{FOCUSED},{{"pane_id":"w1:p9",{LIVE},"tab_id":"w1:t2"}}"#
         ));
         assert_eq!(launch_decision(&other_tab, 100), "FOCUS w1:p9");
         // Same-tab pane wins over an other-tab one.
         let both_tabs = pane_list(&format!(
-            r#"{FOCUSED},{{"pane_id":"w1:p9","label":"Notes","tab_id":"w1:t2"}},{{"pane_id":"w1:p2","label":"Notes","tab_id":"w1:t1"}}"#
+            r#"{FOCUSED},{{"pane_id":"w1:p9",{LIVE},"tab_id":"w1:t2"}},{{"pane_id":"w1:p2",{LIVE},"tab_id":"w1:t1"}}"#
         ));
         assert_eq!(launch_decision(&both_tabs, 100), "FOCUS w1:p2");
         // Same-tab unfocused pane is focused.
         let same_tab = pane_list(&format!(
-            r#"{FOCUSED},{{"pane_id":"w1:p2","label":"Notes","tab_id":"w1:t1"}}"#
+            r#"{FOCUSED},{{"pane_id":"w1:p2",{LIVE},"tab_id":"w1:t1"}}"#
         ));
         assert_eq!(launch_decision(&same_tab, 100), "FOCUS w1:p2");
         // Focused Notes pane toggles closed.
-        let focused_notes =
-            pane_list(r#"{"pane_id":"w1:p2","label":"Notes","tab_id":"w1:t1","focused":true}"#);
+        let focused_notes = pane_list(&format!(
+            r#"{{"pane_id":"w1:p2",{LIVE},"tab_id":"w1:t1","focused":true}}"#
+        ));
         assert_eq!(launch_decision(&focused_notes, 100), "CLOSE w1:p2");
-        // Token without label also identifies the pane.
+        // Token without label also identifies the pane (launcher stamps the
+        // token before the rename lands).
         let token_only = pane_list(&format!(
             r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-notes":"95"}}}}"#
         ));
@@ -262,12 +278,12 @@ mod tests {
         // In an unscoped pane list, a Notes pane in ANOTHER workspace edits a
         // different note file — not a duplicate, not focusable from here: OPEN.
         let other_ws = pane_list(&format!(
-            r#"{focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1","workspace_id":"w2"}}"#
+            r#"{focused},{{"pane_id":"w2:p9",{LIVE},"tab_id":"w2:t1","workspace_id":"w2"}}"#
         ));
         assert_eq!(launch_decision(&other_ws, 100), "OPEN");
         // Same workspace, other tab: still matched (the real duplicate risk).
         let same_ws = pane_list(&format!(
-            r#"{focused},{{"pane_id":"w1:p9","label":"Notes","tab_id":"w1:t2","workspace_id":"w1"}}"#
+            r#"{focused},{{"pane_id":"w1:p9",{LIVE},"tab_id":"w1:t2","workspace_id":"w1"}}"#
         ));
         assert_eq!(launch_decision(&same_ws, 100), "FOCUS w1:p9");
     }
@@ -281,18 +297,18 @@ mod tests {
         let focused =
             r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","workspace_id":"w-1"}"#;
         let legacy_mate = pane_list(&format!(
-            r#"{focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1","workspace_id":"w:2"}}"#
+            r#"{focused},{{"pane_id":"w2:p9",{LIVE},"tab_id":"w2:t1","workspace_id":"w:2"}}"#
         ));
         assert_eq!(launch_decision(&legacy_mate, 100), "FOCUS w2:p9");
         let missing_id = pane_list(&format!(
-            r#"{focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1"}}"#
+            r#"{focused},{{"pane_id":"w2:p9",{LIVE},"tab_id":"w2:t1"}}"#
         ));
         assert_eq!(launch_decision(&missing_id, 100), "FOCUS w2:p9");
         // A safe id has its own file — NOT a duplicate of a legacy-keyed pane.
         let safe_focused =
             r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","workspace_id":"w1"}"#;
         let mixed = pane_list(&format!(
-            r#"{safe_focused},{{"pane_id":"w2:p9","label":"Notes","tab_id":"w2:t1","workspace_id":"w-2"}}"#
+            r#"{safe_focused},{{"pane_id":"w2:p9",{LIVE},"tab_id":"w2:t1","workspace_id":"w-2"}}"#
         ));
         assert_eq!(launch_decision(&mixed, 100), "OPEN");
     }
@@ -305,7 +321,7 @@ mod tests {
         let focused =
             r#"{"pane_id":"w1:p1","focused":true,"tab_id":"w1:t1","workspace_id":"W6"}"#;
         let other_case = pane_list(&format!(
-            r#"{focused},{{"pane_id":"w1:p9","label":"Notes","tab_id":"w1:t2","workspace_id":"w6"}}"#
+            r#"{focused},{{"pane_id":"w1:p9",{LIVE},"tab_id":"w1:t2","workspace_id":"w6"}}"#
         ));
         assert_eq!(launch_decision(&other_case, 100), "FOCUS w1:p9");
     }
@@ -320,11 +336,24 @@ mod tests {
             r#"{FOCUSED},{{"pane_id":"w1:p2","tab_id":"w1:t1","tokens":{{"herdr-notes":{{"v":1}}}}}}"#
         ));
         assert_eq!(launch_decision(&garbled, 100), "REPLACE w1:p2");
-        // Label-only (no token yet) = launcher-fresh, NOT dead.
-        let fresh = pane_list(&format!(
+        // Label WITHOUT token = restart corpse: a server restart restores the
+        // pane's label/scrollback but not its process or tokens (and emits no
+        // events). Safe to replace because a launcher-fresh pane is stamped
+        // before it can be observed label-only.
+        let corpse = pane_list(&format!(
             r#"{FOCUSED},{{"pane_id":"w1:p2","label":"Notes","tab_id":"w1:t1"}}"#
         ));
-        assert_eq!(launch_decision(&fresh, 100), "FOCUS w1:p2");
+        assert_eq!(launch_decision(&corpse, 100), "REPLACE w1:p2");
+        // ...even when the corpse itself is the focused pane: a toggle on a
+        // dead Notes pane should revive it, not close it.
+        let focused_corpse =
+            pane_list(r#"{"pane_id":"w1:p2","label":"Notes","tab_id":"w1:t1","focused":true}"#);
+        assert_eq!(launch_decision(&focused_corpse, 100), "REPLACE w1:p2");
+        // Unrelated tokens don't count as a Notes heartbeat.
+        let other_tokens = pane_list(&format!(
+            r#"{FOCUSED},{{"pane_id":"w1:p2","label":"Notes","tab_id":"w1:t1","tokens":{{"other-plugin":"99"}}}}"#
+        ));
+        assert_eq!(launch_decision(&other_tokens, 100), "REPLACE w1:p2");
     }
 
     #[test]

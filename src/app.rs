@@ -18,7 +18,7 @@ use ratatui::widgets::{
 use unicode_width::UnicodeWidthChar;
 
 use crate::markdown::render_markdown;
-use crate::state::{self, METADATA_SOURCE, Mode, Note, PANE_LABEL};
+use crate::state::{self, Mode, Note};
 
 /// Debounce for the edit-mode autosave.
 const AUTOSAVE_AFTER: Duration = Duration::from_secs(2);
@@ -120,17 +120,7 @@ impl App {
 
     fn report_tokens(&self) {
         let Some(pane_id) = &self.pane_id else { return };
-        // Token value MUST be a string; numbers are rejected as invalid_request.
-        let now = state::unix_now().to_string();
-        let _ = crate::ipc::call_text(
-            "pane.report_metadata",
-            serde_json::json!({
-                "pane_id": pane_id,
-                "source": METADATA_SOURCE,
-                "title": PANE_LABEL,
-                "tokens": { METADATA_SOURCE: now },
-            }),
-        );
+        let _ = crate::ipc::stamp_identity(pane_id);
     }
 
     // ----- keys --------------------------------------------------------

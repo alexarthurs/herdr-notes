@@ -30,9 +30,25 @@ fn main() -> std::io::Result<()> {
             println!("{}", launch::open_plan(&read_stdin()?));
             return Ok(());
         }
+        Some("--stamp") => {
+            // Stamp the identity token onto a just-split pane BEFORE its TUI
+            // spawns, so the pane is never observable label-without-token (the
+            // state --launch-decision replaces as a restart corpse). Best
+            // effort: on failure the TUI's own startup stamp covers within ~1s.
+            let Some(pane_id) = std::env::args().nth(2) else {
+                eprintln!("herdr-notes: --stamp requires a pane id");
+                std::process::exit(2);
+            };
+            if let Err(err) = ipc::stamp_identity(&pane_id) {
+                eprintln!("herdr-notes: --stamp {pane_id}: {err}");
+            }
+            return Ok(());
+        }
         Some(other) => {
             eprintln!("herdr-notes: unknown argument `{other}`");
-            eprintln!("usage: herdr-notes [--launch-decision|--focused-pane|--open-plan]");
+            eprintln!(
+                "usage: herdr-notes [--launch-decision|--focused-pane|--open-plan|--stamp <pane-id>]"
+            );
             std::process::exit(2);
         }
         None => {}

@@ -42,8 +42,9 @@ herdr plugin install alexarthurs/herdr-notes
 - **Actually persistent** — atomic autosaves to a per-workspace JSON file in
   herdr's config directory. Close the pane, kill the terminal, reboot: it
   comes back.
-- **A polite pane** — one toggle action opens, focuses, or closes it;
-  a heartbeat token means a dead pane gets replaced, never duplicated.
+- **A polite pane** — one toggle action opens, focuses, or closes it; a
+  heartbeat token means a dead pane — even one left behind by a herdr
+  server restart — gets replaced on the next toggle, never duplicated.
 
 ## Install
 

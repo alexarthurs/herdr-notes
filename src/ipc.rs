@@ -40,6 +40,25 @@ pub fn call_text(method: &str, params: serde_json::Value) -> std::io::Result<Str
     roundtrip(&path, &request.to_string())
 }
 
+/// Stamp the Notes identity (heartbeat token + title) onto `pane_id` NOW.
+/// Two callers: the TUI's periodic heartbeat, and the launcher's `--stamp`
+/// mode — which runs synchronously right after `pane split`, BEFORE the TUI
+/// process spawns, so a fresh pane is never observable in the
+/// label-without-token state that launch.rs replaces as a restart corpse.
+pub fn stamp_identity(pane_id: &str) -> std::io::Result<String> {
+    // Token value MUST be a string; numbers are rejected as invalid_request.
+    let now = crate::state::unix_now().to_string();
+    call_text(
+        "pane.report_metadata",
+        serde_json::json!({
+            "pane_id": pane_id,
+            "source": crate::state::METADATA_SOURCE,
+            "title": crate::state::PANE_LABEL,
+            "tokens": { crate::state::METADATA_SOURCE: now },
+        }),
+    )
+}
+
 #[cfg(windows)]
 fn roundtrip(path: &std::path::Path, request: &str) -> std::io::Result<String> {
     let pipe = format!(r"\\.\pipe\{}", path.display());
