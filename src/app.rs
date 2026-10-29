@@ -191,6 +191,9 @@ impl App {
     }
 
     fn on_key_edit(&mut self, key: KeyEvent) {
+        if self.edit_shortcut(key) {
+            return;
+        }
         // AltGr arrives from Windows as CONTROL|ALT on a plain character
         // (@ { [ ] } \ on German/French/Nordic layouts) — that is text to
         // insert, not a Ctrl shortcut.
@@ -292,6 +295,68 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn edit_shortcut(&mut self, key: KeyEvent) -> bool {
+        let ctrl = key.modifiers == KeyModifiers::CONTROL;
+        let alt = key.modifiers == KeyModifiers::ALT;
+        let command = key.modifiers == KeyModifiers::SUPER
+            || key.modifiers == KeyModifiers::META;
+        match key.code {
+            KeyCode::Char('a') if ctrl => self.col = 0,
+            KeyCode::Left if command => self.col = 0,
+            KeyCode::Char('e') if ctrl => self.col = clen(&self.lines[self.row]),
+            KeyCode::Right if command => self.col = clen(&self.lines[self.row]),
+            KeyCode::Char('u') if ctrl => self.delete_to(self.row, 0),
+            KeyCode::Backspace if command => self.delete_to(self.row, 0),
+            KeyCode::Char('k') if ctrl => self.delete_to(self.row, clen(&self.lines[self.row])),
+            KeyCode::Delete if command => self.delete_to(self.row, clen(&self.lines[self.row])),
+            KeyCode::Char('b') if alt => self.move_word(true),
+            KeyCode::Left if ctrl || alt => self.move_word(true),
+            KeyCode::Char('f') if alt => self.move_word(false),
+            KeyCode::Right if ctrl || alt => self.move_word(false),
+            KeyCode::Char('w') if ctrl => self.delete_word(true),
+            KeyCode::Backspace if ctrl || alt => self.delete_word(true),
+            KeyCode::Char('d') if alt => self.delete_word(false),
+            KeyCode::Delete if ctrl || alt => self.delete_word(false),
+            _ => return false,
+        }
+        true
+    }
+
+    fn word_position(&self, backward: bool) -> (usize, usize) {
+        let text = self.lines.join("\n");
+        let cursor = self.lines[..self.row].iter().map(|line| clen(line) + 1).sum::<usize>()
+            + self.col;
+        let boundary = word_boundary(&text, cursor, backward);
+        text.chars().take(boundary).fold((0, 0), |(row, col), ch| {
+            if ch == '\n' { (row + 1, 0) } else { (row, col + 1) }
+        })
+    }
+
+    fn move_word(&mut self, backward: bool) {
+        (self.row, self.col) = self.word_position(backward);
+    }
+
+    fn delete_word(&mut self, backward: bool) {
+        let (row, col) = self.word_position(backward);
+        self.delete_to(row, col);
+    }
+
+    fn delete_to(&mut self, row: usize, col: usize) {
+        let cursor = (self.row, self.col);
+        let target = (row, col);
+        if cursor == target {
+            return;
+        }
+        let (start, end) = if cursor < target { (cursor, target) } else { (target, cursor) };
+        let suffix = self.lines[end.0][byte_idx(&self.lines[end.0], end.1)..].to_owned();
+        let prefix_end = byte_idx(&self.lines[start.0], start.1);
+        self.lines[start.0].truncate(prefix_end);
+        self.lines[start.0].push_str(&suffix);
+        self.lines.drain(start.0 + 1..end.0 + 1);
+        (self.row, self.col) = start;
+        self.touch();
     }
 
     // ----- drawing -----------------------------------------------------
@@ -445,6 +510,36 @@ fn byte_idx(s: &str, char_idx: usize) -> usize {
     s.char_indices().nth(char_idx).map_or(s.len(), |(b, _)| b)
 }
 
+fn word_boundary(text: &str, cursor: usize, backward: bool) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let class = |ch: char| {
+        if ch.is_whitespace() { 0 } else if ch.is_alphanumeric() || ch == '_' { 1 } else { 2 }
+    };
+    let mut boundary = cursor;
+    if backward {
+        while boundary > 0 && chars[boundary - 1].is_whitespace() {
+            boundary -= 1;
+        }
+        if boundary > 0 {
+            let run = class(chars[boundary - 1]);
+            while boundary > 0 && class(chars[boundary - 1]) == run {
+                boundary -= 1;
+            }
+        }
+    } else {
+        while boundary < chars.len() && chars[boundary].is_whitespace() {
+            boundary += 1;
+        }
+        if boundary < chars.len() {
+            let run = class(chars[boundary]);
+            while boundary < chars.len() && class(chars[boundary]) == run {
+                boundary += 1;
+            }
+        }
+    }
+    boundary
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -540,6 +635,142 @@ mod tests {
         a.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
         a.on_key(key(KeyCode::Esc));
         assert_eq!(a.note.text, "@");
+    }
+
+    #[test]
+    fn line_shortcuts_move_within_the_current_line() {
+        for (code, modifiers, col) in [
+            (KeyCode::Char('a'), KeyModifiers::CONTROL, 0),
+            (KeyCode::Left, KeyModifiers::SUPER, 0),
+            (KeyCode::Left, KeyModifiers::META, 0),
+            (KeyCode::Char('e'), KeyModifiers::CONTROL, 13),
+            (KeyCode::Right, KeyModifiers::SUPER, 13),
+            (KeyCode::Right, KeyModifiers::META, 13),
+        ] {
+            let mut a = app("before\none two three\nafter");
+            a.enter_edit();
+            (a.row, a.col) = (1, 7);
+            a.on_key(KeyEvent::new(code, modifiers));
+            assert_eq!((a.row, a.col), (1, col), "{code:?} {modifiers:?}");
+            assert!(!a.dirty);
+            a.leave_edit();
+            assert_eq!(a.note.text, "before\none two three\nafter");
+        }
+    }
+
+    #[test]
+    fn word_shortcuts_move_without_inserting_shortcut_letters() {
+        for (code, modifiers, col) in [
+            (KeyCode::Char('b'), KeyModifiers::ALT, 4),
+            (KeyCode::Left, KeyModifiers::ALT, 4),
+            (KeyCode::Left, KeyModifiers::CONTROL, 4),
+            (KeyCode::Char('f'), KeyModifiers::ALT, 13),
+            (KeyCode::Right, KeyModifiers::ALT, 13),
+            (KeyCode::Right, KeyModifiers::CONTROL, 13),
+        ] {
+            let mut a = app("one two three");
+            a.enter_edit();
+            a.col = 7;
+            a.on_key(KeyEvent::new(code, modifiers));
+            assert_eq!((a.row, a.col), (0, col), "{code:?} {modifiers:?}");
+            assert!(!a.dirty);
+            a.leave_edit();
+            assert_eq!(a.note.text, "one two three");
+        }
+    }
+
+    #[test]
+    fn deletion_shortcuts_remove_the_requested_range_and_mark_dirty() {
+        for (code, modifiers, line, col) in [
+            (KeyCode::Char('u'), KeyModifiers::CONTROL, " three", 0),
+            (KeyCode::Backspace, KeyModifiers::SUPER, " three", 0),
+            (KeyCode::Backspace, KeyModifiers::META, " three", 0),
+            (KeyCode::Char('k'), KeyModifiers::CONTROL, "one two", 7),
+            (KeyCode::Delete, KeyModifiers::SUPER, "one two", 7),
+            (KeyCode::Delete, KeyModifiers::META, "one two", 7),
+            (KeyCode::Char('w'), KeyModifiers::CONTROL, "one  three", 4),
+            (KeyCode::Backspace, KeyModifiers::ALT, "one  three", 4),
+            (KeyCode::Backspace, KeyModifiers::CONTROL, "one  three", 4),
+            (KeyCode::Char('d'), KeyModifiers::ALT, "one two", 7),
+            (KeyCode::Delete, KeyModifiers::ALT, "one two", 7),
+            (KeyCode::Delete, KeyModifiers::CONTROL, "one two", 7),
+        ] {
+            let mut a = app("before\none two three\nafter");
+            a.enter_edit();
+            (a.row, a.col) = (1, 7);
+            a.on_key(KeyEvent::new(code, modifiers));
+            assert_eq!((a.row, a.col), (1, col), "{code:?} {modifiers:?}");
+            assert!(a.dirty);
+            a.leave_edit();
+            assert_eq!(a.note.text, format!("before\n{line}\nafter"));
+        }
+    }
+
+    #[test]
+    fn word_deletion_handles_unicode_and_punctuation() {
+        let mut a = app("src/café_name.rs  中文");
+        a.enter_edit();
+        a.on_key(key(KeyCode::End));
+        for expected in ["src/café_name.rs  ", "src/café_name.", "src/café_name", "src/", "src", ""] {
+            a.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT));
+            a.commit();
+            assert_eq!(a.note.text, expected);
+            assert_eq!(a.col, clen(expected));
+        }
+    }
+
+    #[test]
+    fn word_shortcuts_cross_blank_lines_without_losing_the_suffix() {
+        let mut a = app("one\n\n  two\nthree");
+        a.enter_edit();
+        (a.row, a.col) = (2, 2);
+        a.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT));
+        a.commit();
+        assert_eq!(a.note.text, "two\nthree");
+        assert_eq!((a.row, a.col), (0, 0));
+
+        let mut a = app("one\n\n  two\nthree");
+        a.enter_edit();
+        a.col = 3;
+        a.on_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT));
+        assert_eq!((a.row, a.col), (2, 5));
+        (a.row, a.col) = (0, 3);
+        a.on_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT));
+        a.leave_edit();
+        assert_eq!(a.note.text, "one\nthree");
+    }
+
+    #[test]
+    fn deletion_at_document_edges_is_a_noop() {
+        let mut a = app("one\n");
+        a.enter_edit();
+        for (row, col, code, modifiers) in [
+            (0, 0, KeyCode::Backspace, KeyModifiers::ALT),
+            (0, 0, KeyCode::Char('u'), KeyModifiers::CONTROL),
+            (1, 0, KeyCode::Delete, KeyModifiers::ALT),
+            (1, 0, KeyCode::Char('k'), KeyModifiers::CONTROL),
+        ] {
+            (a.row, a.col) = (row, col);
+            a.on_key(KeyEvent::new(code, modifiers));
+            assert_eq!((a.row, a.col), (row, col));
+            assert!(!a.dirty);
+        }
+        a.leave_edit();
+        assert_eq!(a.note.text, "one\n");
+    }
+
+    #[test]
+    fn altgr_letters_are_text_even_when_they_match_word_shortcuts() {
+        let mut a = app("");
+        a.enter_edit();
+        for ch in ['b', 'f', 'd', '@'] {
+            a.on_key(KeyEvent::new(
+                KeyCode::Char(ch),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ));
+        }
+        a.leave_edit();
+        assert_eq!(a.note.text, "bfd@");
     }
 
     #[test]
