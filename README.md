@@ -91,6 +91,18 @@ Edit:
 | --- | --- |
 | `Esc` | back to preview (saves) |
 | `Ctrl+S` | save now (autosave runs anyway, ~2s after the last keystroke) |
+| `Ctrl+A` / `Ctrl+E` | start / end of the current line |
+| `Alt+B` / `Alt+F`, `Alt+Left` / `Alt+Right` | previous / next word |
+| `Ctrl+U` / `Ctrl+K` | delete to the start / end of the current line |
+| `Alt+Backspace` / `Ctrl+W` | delete the previous word |
+| `Alt+D` / `Alt+Delete` | delete the next word |
+
+macOS terminals commonly send `Ctrl+A`/`Ctrl+E` for `Cmd+Left`/`Cmd+Right`,
+`Ctrl+U` for `Cmd+Backspace`, and `Alt+B`/`Alt+F` for `Option+Left`/`Option+Right`.
+`Option+Backspace` sends `Alt+Backspace` or `Ctrl+W`. The editor accepts these
+terminal shortcuts as well as direct Command-modified arrows and deletion keys
+when the terminal forwards them. `Ctrl+Left`/`Ctrl+Right` and
+`Ctrl+Backspace`/`Ctrl+Delete` also move or delete by word.
 
 `Esc` never exits the app.
 
